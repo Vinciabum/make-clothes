@@ -1,0 +1,7 @@
+{
+  "name": "AI ID Photo Studio",
+  "description": "Generate professional ID photos, change outfits to suits, and style hair using Gemini AI.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

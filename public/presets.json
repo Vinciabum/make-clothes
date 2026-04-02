@@ -1,0 +1,125 @@
+{
+  "outfits": [
+    {
+      "id": "male_suit",
+      "category": "men_outfit",
+      "label": "Male Business Suit (Navy/Black)",
+      "thumbnailUrl": "/thumbnails/male_suit.png",
+      "prompt": "Change the outfit to a highly professional job interview suit: a perfectly fitted dark navy suit jacket with notch lapels, crisp white dress shirt with spread collar, and a classic blue silk tie with a neat Windsor knot. Sharp structured shoulders, visible chest pocket. Keep face, hair, skin tone, and background exactly as in the original photo."
+    },
+    {
+      "id": "male_grey_suit",
+      "category": "men_outfit",
+      "label": "Male Grey Suit & Blue Shirt",
+      "thumbnailUrl": "/thumbnails/male_grey_suit.png",
+      "prompt": "Change the outfit to a professional charcoal grey business suit jacket with structured shoulders and notch lapels, a light blue dress shirt with a spread collar, and a patterned navy silk tie. Tailored fit, high-quality matte wool texture. Keep face, hair, skin tone, and background exactly as in the original photo."
+    },
+    {
+      "id": "casual_smart_m",
+      "category": "men_outfit",
+      "label": "Smart Casual / LinkedIn",
+      "thumbnailUrl": "/thumbnails/casual_smart_m.png",
+      "prompt": "Change the outfit to a smart casual professional look: a well-fitted medium grey blazer worn over a clean white crew-neck t-shirt. No tie. Tailored but relaxed fit, high-quality fabric texture. Keep face, hair, skin tone, and background exactly as in the original photo."
+    },
+    {
+      "id": "female_suit",
+      "category": "women_outfit",
+      "label": "Female Suit (Black)",
+      "thumbnailUrl": "/thumbnails/female_suit.png",
+      "prompt": "Change the outfit to a strictly formal black women's business blazer worn open over a clean, straight-cut white blouse with a straight neckline. Perfectly fitted structured shoulders, tailored lapels. Highly professional corporate look. Keep face, hair, skin tone, and background exactly as in the original photo."
+    },
+    {
+      "id": "female_blazer_navy",
+      "category": "women_outfit",
+      "label": "Female Navy Blazer",
+      "thumbnailUrl": "/thumbnails/female_blazer_navy.png",
+      "prompt": "Change the outfit to a tailored navy blue professional blazer with structured shoulders and notch lapels, worn over a simple white scoop-neck top. Single-button closure. Modern corporate style, high-quality fabric. Keep face, hair, skin tone, and background exactly as in the original photo."
+    },
+    {
+      "id": "female_blouse_cream",
+      "category": "women_outfit",
+      "label": "Female Cream Silk Blouse",
+      "thumbnailUrl": "/thumbnails/female_blouse_cream.png",
+      "prompt": "Change the outfit to an elegant, high-quality ivory cream silk blouse with a modest V-neckline and subtle fabric sheen. Soft natural draping, no logos or prints. Professional yet approachable look. Keep face, hair, skin tone, and background exactly as in the original photo."
+    },
+    {
+      "id": "casual_smart_f",
+      "category": "women_outfit",
+      "label": "Smart Casual / LinkedIn",
+      "thumbnailUrl": "/thumbnails/casual_smart_f.png",
+      "prompt": "Change the outfit to a smart casual professional look: a fitted light blue button-down collared shirt, neatly tucked, with a clean modern silhouette. Suitable for a LinkedIn profile or professional headshot. Keep face, hair, skin tone, and background exactly as in the original photo."
+    }
+  ],
+  "hairs": [
+    {
+      "id": "neat_short",
+      "category": "men_hair",
+      "label": "Neat Short Hair",
+      "thumbnailUrl": "/thumbnails/neat_short.png",
+      "prompt": "Change the hairstyle ONLY to a neat, professional short haircut. Sides and back are tapered clean. Top is slightly longer and neatly combed. No facial hair added or removed. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "side_part",
+      "category": "men_hair",
+      "label": "Classic Side Part",
+      "thumbnailUrl": "/thumbnails/side_part.png",
+      "prompt": "Change the hairstyle ONLY to a classic gentleman's side part, neatly combed over with a natural-looking part on the left side. Smooth, professional finish with visible comb direction. No facial hair added or removed. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "sleek_updo",
+      "category": "women_hair",
+      "label": "Professional Updo (Sleek Bun)",
+      "thumbnailUrl": "/thumbnails/sleek_updo.png",
+      "prompt": "Change the hairstyle ONLY to a sleek, professional low bun with a neat side part. All hair pulled back tightly — no flyaways, no loose strands. Blend the hairline naturally. Polished and elegant styling suitable for formal interviews or flight attendant ID photos. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "medium_soft_shag",
+      "category": "women_hair",
+      "label": "Medium Soft Shag / Wolf Cut",
+      "thumbnailUrl": "/thumbnails/medium_soft_shag.png",
+      "prompt": "Change the hairstyle ONLY to a medium-length soft shag cut (wolf cut style) with high-layered curtain bangs and wispy feathered ends. Textured, airy, and modern. Blend the hairline naturally at temples and forehead. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "medium_c_curl",
+      "category": "women_hair",
+      "label": "Medium C-Curl Layers",
+      "thumbnailUrl": "/thumbnails/medium_c_curl.png",
+      "prompt": "Change the hairstyle ONLY to medium-length hair with face-framing layers, ends curled inward in a smooth C-shape. Voluminous, smooth texture. Feminine and elegant look. Blend the hairline naturally. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "long_straight",
+      "category": "women_hair",
+      "label": "Long Straight",
+      "thumbnailUrl": "/thumbnails/long_straight.png",
+      "prompt": "Change the hairstyle ONLY to long, straight, smooth hair draped naturally over the shoulders. High-shine, healthy-looking strands with a professional salon blowout finish. Blend the hairline naturally. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "wavy_long",
+      "category": "women_hair",
+      "label": "Soft Wavy Hair",
+      "thumbnailUrl": "/thumbnails/wavy_long.png",
+      "prompt": "Change the hairstyle ONLY to long, soft, voluminous wavy hair with loose beach waves and natural movement. Elegantly styled, airy and professional. Blend the hairline naturally. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "curly_bob",
+      "category": "women_hair",
+      "label": "Curly Bob / Shoulder Length",
+      "thumbnailUrl": "/thumbnails/curly_bob.png",
+      "prompt": "Change the hairstyle ONLY to a chic, shoulder-length curly bob cut at jaw length. Defined bouncy curls, professionally styled. Blend the hairline naturally. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "bun",
+      "category": "women_hair",
+      "label": "Tight Professional Bun",
+      "thumbnailUrl": "/thumbnails/bun.png",
+      "prompt": "Change the hairstyle ONLY to a tight, perfectly groomed professional bun pulled all the way back. All hair swept away from the face — no loose strands. Blend the hairline naturally at temples. Suitable for flight attendant or corporate ID photo. Original hair color must be preserved exactly. DO NOT change face, skin tone, clothing, or background."
+    },
+    {
+      "id": "color_dark",
+      "category": "women_hair",
+      "label": "Darker Hair Color",
+      "thumbnailUrl": "/thumbnails/color_dark.png",
+      "prompt": "Keep the hairstyle EXACTLY the same — same length, same style, same volume, same shape. Change ONLY the hair color to a deep, rich natural black or dark espresso brown. No highlights, no shine effects, no color gradient. Natural matte finish. DO NOT change face, skin tone, clothing, background, or hairstyle shape."
+    }
+  ]
+}
