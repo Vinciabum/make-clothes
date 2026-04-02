@@ -156,18 +156,19 @@ const App: React.FC = () => {
     }
   };
 
-  const handleStylePack = async (gender: 'male'|'female') => {
+  const handleStylePack = async (gender: 'male'|'female'|'male_summer'|'female_summer'|'boy'|'girl') => {
     const sourceImage = currentImage || originalImage;
     if (!sourceImage) return;
 
-    setState({ isLoading: true, error: null, currentStep: `Generating V3 ${gender} 5-Style P...` });
+    const generationCount = (gender === 'male' || gender === 'female') ? 5 : 3;
+    setState({ isLoading: true, error: null, currentStep: `Generating V3 ${gender} ${generationCount}-Style P...` });
     try {
       const images = await generateStylePack(sourceImage, gender, { preserveFace });
       setStylePack(images);
       setSelectedStyleIndex(0);
       setCurrentImage(images[0]);
-      setHistory(prev => [...prev, images[0]]);
-      setLayerCount(prev => prev + 1);
+      setHistory(prev => [...prev, ...images]);
+      setLayerCount(prev => prev + images.length);
       
       setState({ isLoading: false, error: null, currentStep: 'idle' });
     } catch (error: any) {
@@ -439,15 +440,27 @@ const App: React.FC = () => {
 
               <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 flex flex-col gap-3 flex-1 overflow-y-auto">
 
-                {/* V3 ONE CLICK 5 STYLES */}
+                {/* V3 ONE CLICK GENERATIONS */}
                 <div className="pb-4 border-b border-slate-700">
                   <div className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-3 flex items-center gap-1 line-clamp-1"><Sparkles className="w-4 h-4 text-amber-500"/> V3 Multi-Generation</div>
-                  <div className="flex flex-col gap-2">
-                     <Button onClick={() => handleStylePack('male')} className="w-full bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-amber-900 border border-slate-700 hover:border-amber-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-4 h-4 text-amber-500 group-hover:scale-110 transition-transform"/>}>
-                        Male 5-Style Pack
+                  <div className="grid grid-cols-2 gap-2">
+                     <Button onClick={() => handleStylePack('male')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-slate-700 border border-slate-700 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-slate-400 group-hover:scale-110 transition-transform"/>}>
+                        성인 남성 (기본 5종)
                      </Button>
-                     <Button onClick={() => handleStylePack('female')} className="w-full bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-pink-900 border border-slate-700 hover:border-pink-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-4 h-4 text-pink-500 group-hover:scale-110 transition-transform"/>}>
-                        Female 5-Style Pack
+                     <Button onClick={() => handleStylePack('female')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-slate-700 border border-slate-700 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-slate-400 group-hover:scale-110 transition-transform"/>}>
+                        성인 여성 (기본 5종)
+                     </Button>
+                     <Button onClick={() => handleStylePack('male_summer')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-amber-900 border border-slate-700 hover:border-amber-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-amber-500 group-hover:scale-110 transition-transform"/>}>
+                        2030 남성 (여름 3종)
+                     </Button>
+                     <Button onClick={() => handleStylePack('female_summer')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-pink-900 border border-slate-700 hover:border-pink-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-pink-500 group-hover:scale-110 transition-transform"/>}>
+                        2030 여성 (여름 3종)
+                     </Button>
+                     <Button onClick={() => handleStylePack('boy')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-blue-900 border border-slate-700 hover:border-blue-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-blue-500 group-hover:scale-110 transition-transform"/>}>
+                        남자 아이 (3종)
+                     </Button>
+                     <Button onClick={() => handleStylePack('girl')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-rose-900 border border-slate-700 hover:border-rose-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-rose-500 group-hover:scale-110 transition-transform"/>}>
+                        여자아이 (3종)
                      </Button>
                   </div>
                 </div>

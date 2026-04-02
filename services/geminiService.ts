@@ -109,8 +109,8 @@ Output ONLY the edited image.`;
 
     const response = await ai.models.generateContent({
       model: model,
-      contents: { parts },
-      config: { seed: generationSeed },
+      contents: parts,
+      config: { responseModalities: ['IMAGE'], seed: generationSeed },
     });
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -131,7 +131,7 @@ Output ONLY the edited image.`;
  */
 export const generateStylePack = async (
   base64Image: string,
-  gender: 'male' | 'female',
+  gender: 'male' | 'female' | 'male_summer' | 'female_summer' | 'boy' | 'girl',
   options: EditOptions = { preserveFace: true }
 ): Promise<string[]> => {
   try {
@@ -160,7 +160,37 @@ export const generateStylePack = async (
       "TASK: Apply a cozy casual style: a thick, dark navy-blue cable-knit sweater with a high, snug crew neckline. Prominent, realistic braided wool texture with a relaxed but neat fit."
     ];
 
-    const targetPrompts = gender === 'male' ? malePrompts : femalePrompts;
+    const maleSummerPrompts = [
+      "TASK: Change the outfit to a summer linen shirt. The shirt should be made of crisp, breathable linen fabric in a soft pastel color like light sky blue or mint. It can be short-sleeve or have neatly rolled-up sleeves, creating a breezy, natural, and trendy summer dandy look.",
+      "TASK: Change the outfit to a short-sleeve pique polo shirt. Use a solid, high-quality thick cotton pique fabric with a structured collar. The fit should be neat, sporty, and clean, suitable for a professional yet energetic portrait.",
+      "TASK: Change the outfit to a lightweight summer setup suit. Use a very thin, breathable cotton/nylon blend casual summer jacket worn over a plain white crew-neck short-sleeve t-shirt. Professional, modern, and cool for the summer heat."
+    ];
+
+    const femaleSummerPrompts = [
+      "TASK: Change the outfit to a short-sleeve summer tweed jacket. The jacket should use a light, breathable summer tweed weave in a bright color like ivory or pale pink. It must look trendy, elegant, and fresh without being heavy or warm.",
+      "TASK: Change the outfit to a cotton square-neck short-sleeve blouse. Use crisp, matte cotton fabric, absolutely no shiny silk. The square neckline should clearly show the collarbones, creating a clean, modern, and pure summer styling.",
+      "TASK: Change the outfit to a natural open-collar linen shirt. The shirt should be made of textured, breathable linen in a soft ivory or beige tone. The V-neck open collar provides a breezy, effortless, and elegant summer look."
+    ];
+
+    const boyPrompts = [
+      "TASK: Change the outfit to a neat preppy style: a crisp white button-down shirt layered under a thin, high-quality navy blue or cream v-neck knit vest. Smart casual, clean student look.",
+      "TASK: Change the outfit to a fresh and cool summer style: a soft pastel blue or mint-colored oxford shirt with subtle thin stripes. Leave the top button undone for a natural, clean, and bright youthful appearance.",
+      "TASK: Change the outfit to a trendy summer short-sleeve t-shirt. Use a solid, vibrant yet neat color like butter yellow, sage green, or cobalt blue. High-quality cotton, thick distinct neckline, with a very clean, active, and modern teenage fit without heavy logos."
+    ];
+
+    const girlPrompts = [
+      "TASK: Change the outfit to a classic black blouse featuring beautiful white lace details along the collar. The stark contrast between the solid black fabric and the delicate white lace creates a distinct, elegant, and cute styling.",
+      "TASK: Change the outfit to a casual plain pink dress. The fabric should be a normal soft cotton or linen blend, NOT silk or shiny. The dress should have a clean, everyday comfortable fit in a youthful, bright, and solid pink color.",
+      "TASK: Change the outfit to a neat yellow short-sleeve t-shirt. The color should be a bright, clean, and cheerful yellow. High-quality cotton fabric with a simple, modern, and very tidy everyday fit, perfect for summer."
+    ];
+
+    let targetPrompts;
+    if (gender === 'male') targetPrompts = malePrompts;
+    else if (gender === 'female') targetPrompts = femalePrompts;
+    else if (gender === 'male_summer') targetPrompts = maleSummerPrompts;
+    else if (gender === 'female_summer') targetPrompts = femaleSummerPrompts;
+    else if (gender === 'boy') targetPrompts = boyPrompts;
+    else targetPrompts = girlPrompts;
 
     const generateSingle = async (promptInstruction: string, index: number): Promise<string> => {
       const generationSeed = Math.floor(Math.random() * 2147483647);
@@ -183,15 +213,13 @@ ABSOLUTE RULES — any violation makes the output unusable:
 Output ONLY the edited image.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
-        contents: {
-          parts: [
-            { text: fullPrompt },
-            { inlineData: { mimeType: mimeType, data: base64Data } },
-            { inlineData: { mimeType: mimeType, data: base64Data } }
-          ]
-        },
-        config: { seed: generationSeed }
+        model: 'gemini-2.5-flash-image',
+        contents: [
+          { text: fullPrompt },
+          { inlineData: { mimeType: mimeType, data: base64Data } },
+          { inlineData: { mimeType: mimeType, data: base64Data } }
+        ],
+        config: { responseModalities: ['IMAGE'], seed: generationSeed }
       });
 
       for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -202,8 +230,15 @@ Output ONLY the edited image.`;
       throw new Error("No image data returned from generator.");
     };
 
-    const promises = targetPrompts.map((instruction, idx) => generateSingle(instruction, idx));
-    const results = await Promise.all(promises);
+    const results: string[] = [];
+    for (let i = 0; i < targetPrompts.length; i++) {
+      const result = await generateSingle(targetPrompts[i], i);
+      results.push(result);
+      // Wait 2 seconds between requests to avoid QPS/burst rate limits on the paid tier
+      if (i < targetPrompts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
 
     return results;
   } catch (error) {
@@ -247,12 +282,10 @@ Output ONLY the hairstyle description as a precise, detailed physical descriptio
 
     const response = await ai.models.generateContent({
       model: model,
-      contents: {
-        parts: [
-          { text: instruction },
-          { inlineData: { mimeType, data: base64Data } }
-        ]
-      }
+      contents: [
+        { text: instruction },
+        { inlineData: { mimeType, data: base64Data } }
+      ]
     });
 
     return response.text || "A standard " + referenceType;
@@ -316,8 +349,8 @@ Output ONLY the edited image.`;
 
     const response = await ai.models.generateContent({
       model: model,
-      contents: { parts },
-      config: { seed: generationSeed },
+      contents: parts,
+      config: { responseModalities: ['IMAGE'], seed: generationSeed },
     });
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {

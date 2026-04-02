@@ -71,7 +71,15 @@
       "WebFetch(domain:www.betterpic.io)",
       "Bash(node -e \":*)",
       "WebFetch(domain:localhost)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(mkdir -p /c/Users/user/Desktop/make_clothes/public/reference)",
+      "Bash(cp /c/Users/user/Desktop/make_clothes/reference/남-01.jpg /c/Users/user/Desktop/make_clothes/public/reference/)",
+      "Bash(cp /c/Users/user/Desktop/make_clothes/reference/남-02.jpg /c/Users/user/Desktop/make_clothes/public/reference/)",
+      "Bash(cp /c/Users/user/Desktop/make_clothes/reference/남-03.jpg /c/Users/user/Desktop/make_clothes/public/reference/)",
+      "Bash(cp /c/Users/user/Desktop/make_clothes/reference/남-04.jpg /c/Users/user/Desktop/make_clothes/public/reference/)",
+      "WebFetch(domain:ai.google.dev)",
+      "Read(//c/Users/user/.claude/projects/C--Users-user-Desktop-make-clothes/memory//**)",
+      "Read(//c/Users/user/.claude/projects/C--Users-user-Desktop-make-clothes/memory/**)"
     ]
   }
 }

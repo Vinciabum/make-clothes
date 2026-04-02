@@ -41,7 +41,7 @@ app.set('trust proxy', 1 /* number of proxies between user and server */)
 // Rate limiter for the proxy
 const proxyLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // Set ratelimit window at 15min (in ms)
-    max: 100, // Limit each IP to 100 requests per window
+    max: 10000, // Limit each IP to 10000 requests per window
     message: 'Too many requests from this IP, please try again after 15 minutes',
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // no `X-RateLimit-*` headers
