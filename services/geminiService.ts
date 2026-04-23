@@ -25,6 +25,12 @@ export interface EditOptions {
 // — "Face pose consistency" section — so the AI model receives the strongest identity lock
 // the user has specified.
 const POSE_LOCK_BLOCK = `
+[FRONTAL VIEW LOCK — HARD CONSTRAINT, HIGHEST PRIORITY]
+This is a Korean ID photograph (증명사진). By regulation, ONLY a direct frontal view is valid. The subject MUST face the camera directly.
+Required: 0° yaw, 0° pitch, 0° roll. Nose tip points straight at the camera lens.
+Both eyes must be equally visible. Both ears must be symmetrically visible (or equally covered by hair on both sides).
+STRICTLY FORBIDDEN: profile view, three-quarter (3/4) view, side angle, turned head, head tilt, looking away, over-the-shoulder pose, any non-frontal angle.
+
 [POSE / FRAMING / IDENTITY LOCK — HIGHEST PRIORITY]
 Lock the original face pose EXACTLY as in the input photo.
 No head rotation, no tilt, no pitch or yaw change.
@@ -131,6 +137,8 @@ ABSOLUTE RULES — any violation makes the output unusable:
 7. DO NOT copy the face, hair, body shape, skin tone, or background from IMAGE 2.
 8. THIS IS AN EDIT, NOT A GENERATION.
 
+FINAL CHECK: The output must be a direct frontal portrait. If in doubt, default to head-on frontal view. No profile, no 3/4 angle.
+
 Output ONLY the edited image.`;
 
       } else if (referenceType === 'hair') {
@@ -151,6 +159,8 @@ ABSOLUTE RULES — any violation makes the output unusable:
 5. BODY: Shoulder position and body pose must remain exactly as in IMAGE 1.
 6. DO NOT copy the face, skin tone, clothing, or background from IMAGE 2.
 7. THIS IS AN EDIT, NOT A GENERATION.
+
+FINAL CHECK: The output must be a direct frontal portrait. If in doubt, default to head-on frontal view. No profile, no 3/4 angle.
 
 Output ONLY the edited image.`;
       }
@@ -180,6 +190,8 @@ ABSOLUTE RULES — any violation makes the output unusable:
 5. BACKGROUND: Every background pixel must be completely identical to the input.
 6. BODY: Shoulders, neck, and body pose must remain exactly as in the input.
 7. THIS IS AN EDIT, NOT A GENERATION.
+
+FINAL CHECK: The output must be a direct frontal portrait. If in doubt, default to head-on frontal view. No profile, no 3/4 angle.
 
 Output ONLY the edited image.`;
 
@@ -351,6 +363,8 @@ ABSOLUTE RULES — any violation makes the output unusable:
 5. BODY FIT: The garment fit must match the exact original shoulder width, arm thickness, and neckline of the input. Do not widen or narrow the subject.
 6. THIS IS A STRICT PIXEL-LEVEL EDIT, NOT A GENERATION.
 
+FINAL CHECK: The output must be a direct frontal portrait. If in doubt, default to head-on frontal view. No profile, no 3/4 angle.
+
 Output ONLY the edited image.`;
 
       const response = await ai.models.generateContent({
@@ -475,6 +489,8 @@ ABSOLUTE RULES — any violation makes the output unusable:
 5. NO REMNANTS: Ensure no traces of the original hairstyle remain on shoulders or background.
 6. CLOTHING & BACKGROUND: Completely unchanged from the original.
 
+FINAL CHECK: The output must be a direct frontal portrait. If in doubt, default to head-on frontal view. No profile, no 3/4 angle.
+
 Output ONLY the edited image.`;
 
       const response = await ai.models.generateContent({
@@ -592,6 +608,8 @@ ${POSE_LOCK_BLOCK}
 - 눈 모양, 코, 입, 얼굴 윤곽선 픽셀을 가장 먼저 물리적으로 똑같이 복사한 뒤에 다른 작업을 수행할 것.
 - Maintain the exact original background without any changes.
 - THIS IS A STRICT PIXEL-LEVEL EDIT, NOT A PORTRAIT GENERATION.
+FINAL CHECK: The output must be a direct frontal portrait. If in doubt, default to head-on frontal view. No profile, no 3/4 angle.
+
 Output ONLY the edited image.`;
 
     const parts: any[] = [
