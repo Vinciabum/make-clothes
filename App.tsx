@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 import { Button } from './components/Button';
 import { UploadZone } from './components/UploadZone';
-import { editIDPhoto, generateStylePack, extractReferencePrompt, editIDPhotoV4 } from './services/geminiService';
+import { editIDPhoto, generateStylePack, generateHairPack, extractReferencePrompt, editIDPhotoV4 } from './services/geminiService';
+import { detectFaceBBox, FaceBBox } from './services/imageUtils';
 import { GenerationState, PresetOption } from './types';
 
 const App: React.FC = () => {
@@ -28,6 +29,15 @@ const App: React.FC = () => {
 
   const [history, setHistory] = useState<string[]>([]);
   const [preserveFace, setPreserveFace] = useState<boolean>(true);
+  // ID-photo strict mode: locks geometry to original + face paste-back from pristine original.
+  const [enforceIdentity, setEnforceIdentity] = useState<boolean>(true);
+  // When true, every edit uses originalImage as source (no drift accumulation).
+  // When false, edits stack on currentImage (legacy layering).
+  const [alwaysFromOriginal, setAlwaysFromOriginal] = useState<boolean>(true);
+  // Session-fixed seed: same input → same output. Regenerated only on new original upload.
+  const [sessionSeed, setSessionSeed] = useState<number>(() => Math.floor(Math.random() * 2147483647));
+  // Cached face bbox for the original image (computed once).
+  const originalFaceBBoxRef = useRef<FaceBBox | null>(null);
   
   const [outfitOptions, setOutfitOptions] = useState<{men: PresetOption[], women: PresetOption[]}>({ men: [], women: [] });
   const [hairOptions, setHairOptions] = useState<{men: PresetOption[], women: PresetOption[]}>({ men: [], women: [] });
@@ -37,6 +47,11 @@ const App: React.FC = () => {
   const [promptOverride, setPromptOverride] = useState('');
 
   const [layerCount, setLayerCount] = useState(0);
+
+  // New UI States
+  const [activeTab, setActiveTab] = useState<'outfit'|'hair'|'manual'>('outfit');
+  const [filterGender, setFilterGender] = useState<'male'|'female'|'kids'>('male');
+  const [filterTheme, setFilterTheme] = useState<'basic'|'suit_2030'|'suit_5060'|'casual_2030'|'casual_5060'|'summer_2030'|'interview'|'hair_2030'|'hair_long'|'hair_short'|'hair_4050'|'hair_4050_long'|'hair_4050_short'>('basic');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -73,6 +88,8 @@ const App: React.FC = () => {
       reader.onloadend = () => {
         if (typeof reader.result === 'string') {
           setOriginalImage(reader.result);
+          setSessionSeed(Math.floor(Math.random() * 2147483647));
+          originalFaceBBoxRef.current = null;
           if (isWorkspaceActive) {
             setCurrentImage(reader.result);
             setHistory([reader.result]);
@@ -84,6 +101,31 @@ const App: React.FC = () => {
     }
     if (event.target) event.target.value = '';
   };
+
+  // Pre-detect and cache the original face bbox whenever a new original is loaded.
+  useEffect(() => {
+    if (!originalImage) { originalFaceBBoxRef.current = null; return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const bbox = await detectFaceBBox(originalImage);
+        if (!cancelled) originalFaceBBoxRef.current = bbox;
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [originalImage]);
+
+  // Source image helper: always start from original when alwaysFromOriginal is on.
+  const sourceForEdit = (): string | null =>
+    alwaysFromOriginal ? originalImage : (currentImage || originalImage);
+
+  // Shared options bag passed to every service call.
+  const editOpts = () => ({
+    preserveFace,
+    enforceIdentity,
+    sessionSeed,
+    originalFaceBBox: originalFaceBBoxRef.current,
+  });
 
   const handleEnterWorkspace = async () => {
     if (!originalImage) return;
@@ -102,7 +144,7 @@ const App: React.FC = () => {
       try {
         const textPrompt = await extractReferencePrompt(initialReferenceImage, initialReferenceType);
         setState({ isLoading: true, error: null, currentStep: `Applying mask & merging (V4)...` });
-        const newImage = await editIDPhotoV4(originalImage, textPrompt, { preserveFace }, initialReferenceType);
+        const newImage = await editIDPhotoV4(originalImage, textPrompt, editOpts(), initialReferenceType);
         setHistory(prev => [...prev, newImage]);
         setCurrentImage(newImage);
         setLayerCount(1);
@@ -114,12 +156,13 @@ const App: React.FC = () => {
   };
 
   const handleSyncWorkspaceRef = async (type: 'outfit'|'hair', refImageBase64: string) => {
-    if (!currentImage) return;
+    const src = sourceForEdit();
+    if (!src) return;
     setState({ isLoading: true, error: null, currentStep: `Extracting ${type} features...` });
     try {
       const textPrompt = await extractReferencePrompt(refImageBase64, type);
       setState({ isLoading: true, error: null, currentStep: `Applying mask & synthesizing ${type}...` });
-      const newImage = await editIDPhotoV4(currentImage, textPrompt, { preserveFace }, type);
+      const newImage = await editIDPhotoV4(src, textPrompt, editOpts(), type);
       setHistory(prev => [...prev, newImage]);
       setCurrentImage(newImage);
       setLayerCount(prev => prev + 1);
@@ -133,16 +176,17 @@ const App: React.FC = () => {
   const handleGeneratePreset = async (preset: PresetOption, useOriginal: boolean) => {
     setIsModalOpen(false);
     setStylePack([]);
-    const sourceImage = useOriginal ? originalImage : currentImage;
+    // Respect alwaysFromOriginal: any edit defaults to pristine original source.
+    const sourceImage = (alwaysFromOriginal || useOriginal) ? originalImage : currentImage;
     if (!sourceImage) return;
 
     setState({ isLoading: true, error: null, currentStep: `Applying ${preset.label}...` });
     try {
-      const finalPrompt = promptOverride.trim() 
+      const finalPrompt = promptOverride.trim()
         ? `${preset.prompt} ADDITIONAL INSTRUCTION: ${promptOverride}`
         : preset.prompt;
 
-      const newImage = await editIDPhoto(sourceImage, finalPrompt, { preserveFace });
+      const newImage = await editIDPhoto(sourceImage, finalPrompt, editOpts());
       
       setHistory(prev => [...prev, newImage]);
       setCurrentImage(newImage);
@@ -156,14 +200,14 @@ const App: React.FC = () => {
     }
   };
 
-  const handleStylePack = async (gender: 'male'|'female'|'male_summer'|'female_summer'|'boy'|'girl') => {
-    const sourceImage = currentImage || originalImage;
+  const handleStylePack = async (gender: 'male'|'female'|'male_summer'|'female_summer'|'boy'|'girl'|'male_5060_suit'|'male_2030_suit'|'female_5060_suit'|'female_2030_suit'|'male_5060_casual'|'male_2030_casual'|'female_5060_casual'|'female_2030_casual') => {
+    const sourceImage = sourceForEdit();
     if (!sourceImage) return;
 
     const generationCount = (gender === 'male' || gender === 'female') ? 5 : 3;
     setState({ isLoading: true, error: null, currentStep: `Generating V3 ${gender} ${generationCount}-Style P...` });
     try {
-      const images = await generateStylePack(sourceImage, gender, { preserveFace });
+      const images = await generateStylePack(sourceImage, gender, editOpts());
       setStylePack(images);
       setSelectedStyleIndex(0);
       setCurrentImage(images[0]);
@@ -173,6 +217,25 @@ const App: React.FC = () => {
       setState({ isLoading: false, error: null, currentStep: 'idle' });
     } catch (error: any) {
       setState({ isLoading: false, error: error.message || "Failed to generate style pack", currentStep: 'idle' });
+    }
+  };
+
+  const handleHairPack = async (genderMode: 'male_interview_hair'|'female_interview_hair'|'male_2030_casual_hair'|'male_4050_hair'|'female_long_hair'|'female_short_hair'|'female_4050_long_hair'|'female_4050_short_hair') => {
+    const sourceImage = sourceForEdit();
+    if (!sourceImage) return;
+
+    setState({ isLoading: true, error: null, currentStep: `Generating V3 ${genderMode} 3-Style P...` });
+    try {
+      const images = await generateHairPack(sourceImage, genderMode, editOpts());
+      setStylePack(images);
+      setSelectedStyleIndex(0);
+      setCurrentImage(images[0]);
+      setHistory(prev => [...prev, ...images]);
+      setLayerCount(prev => prev + images.length);
+      
+      setState({ isLoading: false, error: null, currentStep: 'idle' });
+    } catch (error: any) {
+      setState({ isLoading: false, error: error.message || "Failed to generate hair pack", currentStep: 'idle' });
     }
   };
 
@@ -241,7 +304,7 @@ const App: React.FC = () => {
           </div>
           {layerCount > 0 && (
             <div className="flex items-center gap-2 px-3 py-1 bg-indigo-900/50 text-indigo-300 rounded-full text-sm font-medium border border-indigo-800/50">
-              <Layers className="w-4 h-4" /><span>Layering Applied ({layerCount})</span>
+              <Layers className="w-4 h-4" /><span>레이어 적용됨 ({layerCount})</span>
             </div>
           )}
         </div>
@@ -252,20 +315,20 @@ const App: React.FC = () => {
           <div className="max-w-5xl mx-auto mt-6 w-full animate-in fade-in zoom-in duration-300">
             <div className="text-center mb-8">
               <h2 className="text-4xl font-extrabold text-white mb-3 tracking-tight">Studio Davinci</h2>
-              <p className="text-slate-400 text-lg">Upload client photo and an optional style reference for custom tailoring.</p>
+              <p className="text-slate-400 text-lg">고객 사진을 업로드하고 맞춤 편집을 위한 레퍼런스를 추가해보세요.</p>
             </div>
             
             <div className="flex flex-col md:flex-row gap-6 items-stretch justify-center">
               {/* Client Photo Input */}
               <div className="bg-slate-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl border border-slate-700 relative flex flex-col pt-12 flex-1 max-w-sm w-full">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-600 text-white px-4 py-1.5 rounded-full font-bold text-sm shadow-lg whitespace-nowrap">
-                  STEP 1. Client Photo
+                  STEP 1. 원본 사진 (고객 사진)
                 </div>
                 {originalImage ? (
                   <div className="w-full relative rounded-xl overflow-hidden aspect-[3/4] group border border-slate-700">
                     <img src={originalImage} className="w-full h-full object-cover" alt="Client" />
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <Button onClick={() => setOriginalImage(null)} className="bg-red-600 hover:bg-red-700" icon={<X className="w-4 h-4"/>}>Remove</Button>
+                      <Button onClick={() => setOriginalImage(null)} className="bg-red-600 hover:bg-red-700" icon={<X className="w-4 h-4"/>}>제거하기</Button>
                     </div>
                   </div>
                 ) : (
@@ -283,7 +346,7 @@ const App: React.FC = () => {
               {/* Reference Photo Input */}
               <div className="bg-slate-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl border border-slate-700 relative flex flex-col pt-12 flex-1 max-w-sm w-full">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-emerald-600 text-white px-4 py-1.5 rounded-full font-bold text-sm shadow-lg whitespace-nowrap">
-                  STEP 2. Reference Style (Optional)
+                  STEP 2. 레퍼런스 스타일 (선택사항)
                 </div>
 
                 <div className="mb-4 flex bg-slate-900 rounded-lg p-1 border border-slate-700">
@@ -299,7 +362,7 @@ const App: React.FC = () => {
                   <div className="w-full relative rounded-xl overflow-hidden aspect-[3/4] group border border-slate-700">
                     <img src={initialReferenceImage} className="w-full h-full object-cover" alt="Reference" />
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <Button onClick={() => setInitialReferenceImage(null)} className="bg-red-600 hover:bg-red-700" icon={<X className="w-4 h-4"/>}>Remove</Button>
+                      <Button onClick={() => setInitialReferenceImage(null)} className="bg-red-600 hover:bg-red-700" icon={<X className="w-4 h-4"/>}>제거하기</Button>
                     </div>
                   </div>
                 ) : (
@@ -317,7 +380,7 @@ const App: React.FC = () => {
                 className={`px-10 py-5 text-xl font-bold rounded-2xl shadow-2xl transition-all w-full max-w-md ${originalImage && initialReferenceImage ? 'bg-indigo-600 hover:bg-indigo-500 hover:scale-105' : (originalImage ? 'bg-slate-600 hover:bg-slate-500 text-slate-100' : 'bg-slate-800 text-slate-500 cursor-not-allowed')}`}
                 icon={<Sparkles className="w-6 h-6" />}
               >
-                {initialReferenceImage ? 'Merge & Restyle (V4 Mode)' : 'Enter Preset Workspace (V1 Mode)'}
+                {initialReferenceImage ? '합성 프로세스 시작 (V4 모드)' : '수동 작업 워크스페이스 열기'}
               </Button>
             </div>
           </div>
@@ -332,13 +395,13 @@ const App: React.FC = () => {
                   {/* Left side: Original Image */}
                   <div className="flex-1 flex flex-col relative bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
                      <div className="absolute top-0 left-0 right-0 p-2 z-20 pointer-events-none">
-                       <span className="bg-black/80 backdrop-blur-md text-white text-xs font-semibold px-2 py-1 rounded-md shadow-sm">Original Client</span>
+                       <span className="bg-black/80 backdrop-blur-md text-white text-xs font-semibold px-2 py-1 rounded-md shadow-sm">원본 사진</span>
                      </div>
                      <div className="flex-1 flex items-center justify-center cursor-pointer group" onClick={() => fileInputRef.current?.click()} title="Replace original photo">
                        <img src={originalImage || ''} alt="Original Viewer" className="max-h-full max-w-full object-contain transition-opacity duration-150 group-hover:opacity-60" />
                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 z-10 transition-colors flex items-center justify-center pointer-events-none">
                           <div className="opacity-0 group-hover:opacity-100 bg-white/90 text-slate-900 text-xs font-medium px-4 py-2 rounded-full shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all flex items-center gap-2">
-                              <Upload className="w-4 h-4" /> Replace Photo
+                              <Upload className="w-4 h-4" /> 사진 교체하기
                           </div>
                        </div>
                      </div>
@@ -348,7 +411,7 @@ const App: React.FC = () => {
                   <div className="flex-1 flex flex-col relative bg-slate-900 rounded-xl overflow-hidden border border-indigo-900/50">
                      <div className="absolute top-0 left-0 right-0 p-2 z-20 pointer-events-none flex justify-between items-start">
                        <span className="bg-indigo-600/90 backdrop-blur-md text-white text-xs font-semibold px-2 py-1 rounded-md shadow-sm flex items-center w-fit gap-1">
-                         <Sparkles className="w-3 h-3" /> Result
+                         <Sparkles className="w-3 h-3" /> 결과물
                        </span>
                        <div className="flex flex-col gap-2 items-end pointer-events-auto">
                          {workspaceOutfitRef && (
@@ -381,7 +444,7 @@ const App: React.FC = () => {
                 {/* V3 STYLE PACK GALLERY */}
                 {stylePack.length > 0 && (
                   <div className="absolute bottom-0 left-0 right-0 bg-slate-950/95 backdrop-blur-lg border-t border-amber-900/50 p-2 py-3 flex flex-col justify-center min-h-[110px] z-20">
-                    <span className="text-[10px] text-amber-400 font-bold uppercase tracking-widest pl-4 mb-2 flex items-center gap-1"><Sparkles className="w-3 h-3"/> V3 Style Pack Gallery</span>
+                    <span className="text-[10px] text-amber-400 font-bold uppercase tracking-widest pl-4 mb-2 flex items-center gap-1"><Sparkles className="w-3 h-3"/> V3 다중생성 갤러리</span>
                     <div className="flex gap-4 justify-center items-center">
                       {stylePack.map((img, idx) => (
                         <div key={idx} className="relative group w-[72px] h-[72px] rounded-lg shrink-0 cursor-pointer" onClick={() => {
@@ -409,7 +472,7 @@ const App: React.FC = () => {
               {history.length > 0 && (
                 <div className="bg-slate-950 rounded-xl border border-slate-800 p-3 h-28 flex-shrink-0">
                   <div className="flex items-center gap-2 mb-2 text-xs text-slate-400 font-medium">
-                    <History className="w-3 h-3" /> History (Pro tip: Ctrl+Z to undo)
+                    <History className="w-3 h-3" /> 작업 히스토리 (꿀팁: Ctrl+Z 로 이전 되돌리기)
                   </div>
                   <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                     {history.map((img, idx) => (
@@ -431,100 +494,226 @@ const App: React.FC = () => {
             <div className="flex flex-col gap-4">
               <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col gap-3">
                  <Button onClick={handleDownload} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-lg shadow-indigo-900/20" icon={<Download className="w-4 h-4" />}>
-                   Save Image (Ctrl+S)
+                   이미지 저장하기 (Ctrl+S)
                  </Button>
                  <Button onClick={handleUndo} disabled={history.length <= 1} className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200" icon={<Undo2 className="w-4 h-4" />}>
-                   Undo Last Change
+                   이전 단계로 되돌리기
                  </Button>
               </div>
 
-              <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 flex flex-col gap-3 flex-1 overflow-y-auto">
-
-                {/* V3 ONE CLICK GENERATIONS */}
-                <div className="pb-4 border-b border-slate-700">
-                  <div className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-3 flex items-center gap-1 line-clamp-1"><Sparkles className="w-4 h-4 text-amber-500"/> V3 Multi-Generation</div>
-                  <div className="grid grid-cols-2 gap-2">
-                     <Button onClick={() => handleStylePack('male')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-slate-700 border border-slate-700 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-slate-400 group-hover:scale-110 transition-transform"/>}>
-                        성인 남성 (기본 5종)
-                     </Button>
-                     <Button onClick={() => handleStylePack('female')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-slate-700 border border-slate-700 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-slate-400 group-hover:scale-110 transition-transform"/>}>
-                        성인 여성 (기본 5종)
-                     </Button>
-                     <Button onClick={() => handleStylePack('male_summer')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-amber-900 border border-slate-700 hover:border-amber-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-amber-500 group-hover:scale-110 transition-transform"/>}>
-                        2030 남성 (여름 3종)
-                     </Button>
-                     <Button onClick={() => handleStylePack('female_summer')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-pink-900 border border-slate-700 hover:border-pink-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-pink-500 group-hover:scale-110 transition-transform"/>}>
-                        2030 여성 (여름 3종)
-                     </Button>
-                     <Button onClick={() => handleStylePack('boy')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-blue-900 border border-slate-700 hover:border-blue-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-blue-500 group-hover:scale-110 transition-transform"/>}>
-                        남자 아이 (3종)
-                     </Button>
-                     <Button onClick={() => handleStylePack('girl')} className="w-full text-xs bg-slate-900 hover:bg-gradient-to-r hover:from-slate-800 hover:to-rose-900 border border-slate-700 hover:border-rose-500 text-slate-200 hover:text-white py-3 shadow-lg group transition-all" icon={<UserRound className="w-3 h-3 text-rose-500 group-hover:scale-110 transition-transform"/>}>
-                        여자아이 (3종)
-                     </Button>
-                  </div>
+              <div className="bg-slate-800 rounded-xl border border-slate-700 flex flex-col flex-1 overflow-hidden">
+                {/* TABS */}
+                <div className="flex p-2 gap-1 bg-slate-900 border-b border-slate-700">
+                  <button onClick={() => {setActiveTab('outfit'); setFilterTheme('basic');}} className={`flex-1 py-3 text-xs md:text-sm font-extrabold rounded-lg transition-all ${activeTab === 'outfit' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}>
+                    👕 의상 변경
+                  </button>
+                  <button onClick={() => {setActiveTab('hair'); setFilterTheme('interview');}} className={`flex-1 py-3 text-xs md:text-sm font-extrabold rounded-lg transition-all ${activeTab === 'hair' ? 'bg-pink-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}>
+                    ✂️ 헤어 변경
+                  </button>
+                  <button onClick={() => setActiveTab('manual')} className={`flex-1 flex flex-col items-center justify-center py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all ${activeTab === 'manual' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}>
+                    <span>⚙️ 수동 도구</span>
+                  </button>
                 </div>
-                
-                {/* V2 Sequential Reference Updates */}
-                <div className="pb-4 border-b border-slate-700 pt-2">
-                  <div className="text-sm font-bold text-slate-400 mb-4">V4 Reference Update</div>
-                  
-                  {/* Outfit Box */}
-                  <div className="mb-5">
-                    <span className="text-xs text-indigo-400 font-bold uppercase mb-2 flex items-center gap-1"><Shirt className="w-3 h-3"/> Outfit Reference</span>
-                    <div className="relative group rounded-lg overflow-hidden border border-slate-600 bg-slate-900 h-20 flex items-center justify-center">
-                      {workspaceOutfitRef ? (
-                        <>
-                          <img src={workspaceOutfitRef} className="w-full h-full object-cover opacity-60" alt="" />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Button onClick={() => setWorkspaceOutfitRef(null)} className="bg-red-600/90 text-xs px-2 py-1" icon={<X className="w-3 h-3"/>}>Clear</Button>
-                          </div>
-                        </>
-                      ) : (
-                        <UploadZone onImageSelected={setWorkspaceOutfitRef} compact />
-                      )}
+
+                <div className="p-4 flex flex-col gap-4 overflow-y-auto flex-1 h-[400px]">
+                  {/* TAB 1: OUTFIT */}
+                  {activeTab === 'outfit' && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">1. 성별/유형 선택</label>
+                         <div className="flex gap-2">
+                            {['male', 'female', 'kids'].map(g => (
+                              <button key={g} onClick={() => { setFilterGender(g as any); setFilterTheme('basic'); }} className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterGender === g ? 'bg-slate-700 border-indigo-500 text-white shadow-lg scale-105' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                {g === 'male' ? '👨 남성' : g === 'female' ? '👩 여성' : '👧 아이'}
+                              </button>
+                            ))}
+                         </div>
+                      </div>
+
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">2. 스타일 테마 선택</label>
+                         <div className="grid grid-cols-2 gap-2">
+                            {filterGender === 'kids' ? (
+                              <button onClick={() => setFilterTheme('basic')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'basic' ? 'bg-slate-700 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>기본 (3종)</button>
+                            ) : (
+                              <>
+                                <button onClick={() => setFilterTheme('basic')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'basic' ? 'bg-slate-700 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>기본 (5종)</button>
+                                <button onClick={() => setFilterTheme('suit_2030')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'suit_2030' ? 'bg-slate-700 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>2030 정장 (3종)</button>
+                                <button onClick={() => setFilterTheme('casual_2030')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'casual_2030' ? 'bg-slate-700 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>2030 캐주얼 (3종)</button>
+                                <button onClick={() => setFilterTheme('suit_5060')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'suit_5060' ? 'bg-slate-700 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>5060 정장 (3종)</button>
+                                <button onClick={() => setFilterTheme('casual_5060')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'casual_5060' ? 'bg-slate-700 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>5060 캐주얼 (3종)</button>
+                                <button onClick={() => setFilterTheme('summer_2030')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'summer_2030' ? 'bg-slate-700 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>2030 여름 (3종)</button>
+                              </>
+                            )}
+                         </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <Button 
+                          onClick={() => {
+                            if (filterGender === 'kids') {
+                               handleStylePack(filterTheme === 'basic' ? 'boy' : 'girl');
+                            } else {
+                               const g = filterGender; 
+                               if (filterTheme === 'basic') handleStylePack(g);
+                               else if (filterTheme === 'suit_2030') handleStylePack(`${g}_2030_suit` as any);
+                               else if (filterTheme === 'suit_5060') handleStylePack(`${g}_5060_suit` as any);
+                               else if (filterTheme === 'casual_2030') handleStylePack(`${g}_2030_casual` as any);
+                               else if (filterTheme === 'casual_5060') handleStylePack(`${g}_5060_casual` as any);
+                               else if (filterTheme === 'summer_2030') handleStylePack(`${g}_summer` as any);
+                            }
+                          }}
+                          className="w-full py-5 text-lg font-black bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-xl shadow-indigo-900/30 text-white border-0"
+                          icon={<Sparkles className="w-6 h-6 text-yellow-300" />}
+                        >
+                          위 조합으로 생성하기
+                        </Button>
+                      </div>
                     </div>
-                    {workspaceOutfitRef && (
-                      <Button onClick={() => handleSyncWorkspaceRef('outfit', workspaceOutfitRef)} className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-xs py-2 shadow-sm" icon={<Shirt className="w-3 h-3"/>}>Sync Outfit</Button>
-                    )}
-                  </div>
+                  )}
 
-                  {/* Hair Box */}
-                  <div>
-                    <span className="text-xs text-pink-400 font-bold uppercase mb-2 flex items-center gap-1"><Scissors className="w-3 h-3"/> Hair Reference</span>
-                    <div className="relative group rounded-lg overflow-hidden border border-slate-600 bg-slate-900 h-20 flex items-center justify-center">
-                      {workspaceHairRef ? (
-                        <>
-                          <img src={workspaceHairRef} className="w-full h-full object-cover opacity-60" alt="" />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Button onClick={() => setWorkspaceHairRef(null)} className="bg-red-600/90 text-xs px-2 py-1" icon={<X className="w-3 h-3"/>}>Clear</Button>
-                          </div>
-                        </>
-                      ) : (
-                        <UploadZone onImageSelected={setWorkspaceHairRef} compact />
-                      )}
+                  {/* TAB 2: HAIR */}
+                  {activeTab === 'hair' && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">1. 성별 선택</label>
+                         <div className="flex gap-2">
+                            {['male', 'female'].map(g => (
+                              <button key={g} onClick={() => { setFilterGender(g as any); setFilterTheme('interview'); }} className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterGender === g ? 'bg-slate-700 border-pink-500 text-white shadow-lg scale-105' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                {g === 'male' ? '👨 남성' : '👩 여성'}
+                              </button>
+                            ))}
+                         </div>
+                      </div>
+
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-2 block tracking-widest uppercase">2. 헤어스타일 테마</label>
+                         <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => setFilterTheme('interview')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all col-span-2 ${filterTheme === 'interview' ? 'bg-slate-700 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                               ✂️ 취업 단정 (3종)
+                            </button>
+                            {filterGender === 'male' ? (
+                              <>
+                                <button onClick={() => setFilterTheme('hair_2030')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'hair_2030' ? 'bg-slate-700 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                  2030 스타일 (3종)
+                                </button>
+                                <button onClick={() => setFilterTheme('hair_4050')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'hair_4050' ? 'bg-slate-700 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                  4050 스타일 (3종)
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button onClick={() => setFilterTheme('hair_long')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'hair_long' ? 'bg-slate-700 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                  2030 긴머리 (3종)
+                                </button>
+                                <button onClick={() => setFilterTheme('hair_short')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'hair_short' ? 'bg-slate-700 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                  2030 짧은머리 (3종)
+                                </button>
+                                <button onClick={() => setFilterTheme('hair_4050_long')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'hair_4050_long' ? 'bg-slate-700 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                  4050 긴머리 (3종)
+                                </button>
+                                <button onClick={() => setFilterTheme('hair_4050_short')} className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${filterTheme === 'hair_4050_short' ? 'bg-slate-700 border-pink-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                                  4050 짧은머리 (3종)
+                                </button>
+                              </>
+                            )}
+                         </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <Button 
+                          onClick={() => {
+                            let mode: Parameters<typeof handleHairPack>[0];
+                            if (filterTheme === 'hair_2030') mode = 'male_2030_casual_hair';
+                            else if (filterTheme === 'hair_4050') mode = 'male_4050_hair';
+                            else if (filterTheme === 'hair_long') mode = 'female_long_hair';
+                            else if (filterTheme === 'hair_short') mode = 'female_short_hair';
+                            else if (filterTheme === 'hair_4050_long') mode = 'female_4050_long_hair';
+                            else if (filterTheme === 'hair_4050_short') mode = 'female_4050_short_hair';
+                            else mode = filterGender === 'male' ? 'male_interview_hair' : 'female_interview_hair';
+                            handleHairPack(mode);
+                          }}
+                          className="w-full py-5 text-lg font-black bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 shadow-xl shadow-pink-900/30 text-white border-0"
+                          icon={<Sparkles className="w-6 h-6 text-yellow-300" />}
+                        >
+                          위 조합으로 생성하기
+                        </Button>
+                      </div>
                     </div>
-                    {workspaceHairRef && (
-                      <Button onClick={() => handleSyncWorkspaceRef('hair', workspaceHairRef)} className="w-full mt-2 bg-pink-600 hover:bg-pink-700 text-xs py-2 shadow-sm" icon={<Scissors className="w-3 h-3"/>}>Sync Hair</Button>
-                    )}
-                  </div>
-                </div>
+                  )}
 
-                <div className="pt-2">
-                  <div className="text-sm font-bold text-slate-400 mb-2">Apply Style (V1 Presets)</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => openModal('men_outfit')} className="py-2 bg-slate-700 hover:bg-indigo-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium transition-colors border border-slate-600">남성의상</button>
-                    <button onClick={() => openModal('women_outfit')} className="py-2 bg-slate-700 hover:bg-indigo-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium transition-colors border border-slate-600">여성의상</button>
-                    <button onClick={() => openModal('men_hair')} className="py-2 bg-slate-700 hover:bg-indigo-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium transition-colors border border-slate-600">남성헤어</button>
-                    <button onClick={() => openModal('women_hair')} className="py-2 bg-slate-700 hover:bg-indigo-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium transition-colors border border-slate-600">여성헤어</button>
-                  </div>
-                </div>
+                  {/* TAB 3: MANUAL */}
+                  {activeTab === 'manual' && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+                      
+                      {/* V4 Reference Upload */}
+                      <div>
+                        <div className="text-sm font-bold text-slate-400 mb-4">V4 커스텀 레퍼런스 합성</div>
+                        
+                        <div className="mb-5">
+                          <div className="relative group rounded-lg overflow-hidden border border-slate-600 bg-slate-900 h-20 flex items-center justify-center">
+                            {workspaceOutfitRef ? (
+                              <>
+                                <img src={workspaceOutfitRef} className="w-full h-full object-cover opacity-60" alt="" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <Button onClick={() => setWorkspaceOutfitRef(null)} className="bg-red-600/90 text-xs px-2 py-1" icon={<X className="w-3 h-3"/>}>지우기</Button>
+                                </div>
+                              </>
+                            ) : (
+                              <UploadZone onImageSelected={setWorkspaceOutfitRef} compact />
+                            )}
+                          </div>
+                          {workspaceOutfitRef && (
+                            <Button onClick={() => handleSyncWorkspaceRef('outfit', workspaceOutfitRef)} className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-xs py-2 shadow-sm" icon={<Shirt className="w-3 h-3"/>}>업로드한 의상으로 덮어쓰기</Button>
+                          )}
+                        </div>
 
-                 <div className="mt-auto pt-4 border-t border-slate-700">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <input type="checkbox" checked={preserveFace} onChange={(e) => setPreserveFace(e.target.checked)} className="w-4 h-4 rounded bg-slate-900 border-slate-600 text-indigo-600" />
-                    <span className="text-xs font-medium text-slate-300 flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-emerald-400" /> Strict Face Lock</span>
-                  </label>
+                        <div>
+                          <div className="relative group rounded-lg overflow-hidden border border-slate-600 bg-slate-900 h-20 flex items-center justify-center">
+                            {workspaceHairRef ? (
+                              <>
+                                <img src={workspaceHairRef} className="w-full h-full object-cover opacity-60" alt="" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <Button onClick={() => setWorkspaceHairRef(null)} className="bg-red-600/90 text-xs px-2 py-1" icon={<X className="w-3 h-3"/>}>지우기</Button>
+                                </div>
+                              </>
+                            ) : (
+                              <UploadZone onImageSelected={setWorkspaceHairRef} compact />
+                            )}
+                          </div>
+                          {workspaceHairRef && (
+                            <Button onClick={() => handleSyncWorkspaceRef('hair', workspaceHairRef)} className="w-full mt-2 bg-pink-600 hover:bg-pink-700 text-xs py-2 shadow-sm" icon={<Scissors className="w-3 h-3"/>}>업로드한 헤어로 덮어쓰기</Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* V1 Modals */}
+                      <div className="pt-2 border-t border-slate-700">
+                        <div className="text-sm font-bold text-slate-400 mb-2">수동 프리셋 모달 (V1)</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => openModal('men_outfit')} className="py-3 bg-slate-800 hover:bg-indigo-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium border border-slate-700 transition">남성의상</button>
+                          <button onClick={() => openModal('women_outfit')} className="py-3 bg-slate-800 hover:bg-indigo-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium border border-slate-700 transition">여성의상</button>
+                          <button onClick={() => openModal('men_hair')} className="py-3 bg-slate-800 hover:bg-pink-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium border border-slate-700 transition">남성헤어</button>
+                          <button onClick={() => openModal('women_hair')} className="py-3 bg-slate-800 hover:bg-pink-600 rounded-lg text-slate-300 hover:text-white text-xs font-medium border border-slate-700 transition">여성헤어</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-auto pt-4 border-t border-slate-700 flex flex-col gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer group w-full px-2">
+                      <input type="checkbox" checked={preserveFace} onChange={(e) => setPreserveFace(e.target.checked)} className="w-4 h-4 rounded bg-slate-900 border-slate-600 text-indigo-600" />
+                      <span className="text-xs font-medium text-slate-300 flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-emerald-400" /> 얼굴/이목구비 프롬프트 락</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group w-full px-2">
+                      <input type="checkbox" checked={enforceIdentity} onChange={(e) => setEnforceIdentity(e.target.checked)} className="w-4 h-4 rounded bg-slate-900 border-slate-600 text-emerald-600" />
+                      <span className="text-xs font-medium text-slate-300 flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-emerald-400" /> 증명사진 엄격 모드 (원본 해상도 정렬 + 얼굴 붙여넣기)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group w-full px-2">
+                      <input type="checkbox" checked={alwaysFromOriginal} onChange={(e) => setAlwaysFromOriginal(e.target.checked)} className="w-4 h-4 rounded bg-slate-900 border-slate-600 text-indigo-600" />
+                      <span className="text-xs font-medium text-slate-300 flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-amber-400" /> 항상 원본에서 편집 (드리프트 방지)</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -542,7 +731,7 @@ const App: React.FC = () => {
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1 rounded-full"><X className="w-6 h-6" /></button>
             </div>
             <div className="px-6 py-3 bg-slate-800/50 border-b border-slate-800 flex items-center gap-4 text-sm">
-               <span className="text-slate-400 flex items-center gap-1"><Sparkles className="w-4 h-4"/> Override Prompt:</span>
+               <span className="text-slate-400 flex items-center gap-1"><Sparkles className="w-4 h-4"/> 커스텀 지시사항:</span>
                <input type="text" value={promptOverride} onChange={e => setPromptOverride(e.target.value)} placeholder="ex) Change tie to red..." className="flex-1 bg-slate-950 text-white rounded-lg px-3 py-2 border border-slate-700 outline-none" />
             </div>
             <div className="flex-1 overflow-y-auto p-6 bg-slate-900">
@@ -565,7 +754,7 @@ const App: React.FC = () => {
       {state.error && (
         <div className="fixed bottom-4 right-4 bg-red-900 border border-red-500 text-red-200 px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center gap-3 animate-in slide-in-from-bottom-5">
           <AlertCircle className="w-5 h-5 text-red-400" />
-          <div><p className="font-bold text-sm text-red-100">Generation Failed</p><p className="text-sm">{state.error}</p></div>
+          <div><p className="font-bold text-sm text-red-100">이미지 생성 실패</p><p className="text-sm">{state.error}</p></div>
           <button onClick={() => setState(s => ({...s, error: null}))} className="ml-4 text-red-400 hover:text-white p-1 rounded-md"><X className="w-4 h-4" /></button>
         </div>
       )}

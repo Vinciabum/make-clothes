@@ -37,11 +37,14 @@ const parseDotEnvFile = (filePath: string): Record<string, string> => {
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const localEnv = parseDotEnvFile(path.resolve(__dirname, '.env.local'));
+    // Priority: .env.local (local dev) -> .env* via Vite loadEnv -> process.env (Vercel dashboard).
     const geminiApiKey =
       localEnv.GEMINI_API_KEY ||
       localEnv.API_KEY ||
       env.GEMINI_API_KEY ||
       env.API_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.API_KEY ||
       '';
 
     return {
