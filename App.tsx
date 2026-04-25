@@ -9,6 +9,41 @@ import { editIDPhoto, generateStylePack, generateHairPack, extractReferencePromp
 import { detectFaceBBox, FaceBBox } from './services/imageUtils';
 import { GenerationState, PresetOption } from './types';
 
+// Returns the sample preview image IDs (without extension) for the
+// currently selected (gender, theme) combo on the given tab. Maps to
+// files under /public/samples/<id>.png produced by scripts/buildSamples.mjs.
+const getSampleIds = (
+  gender: 'male' | 'female' | 'kids',
+  theme: string,
+  kind: 'outfit' | 'hair'
+): string[] => {
+  if (kind === 'outfit') {
+    if (gender === 'kids') {
+      // Generation currently produces only the 'boy' pack for kids; show both
+      // boy and girl samples here so the user sees the full range.
+      return ['boy_0', 'boy_1', 'boy_2', 'girl_0', 'girl_1', 'girl_2'];
+    }
+    if (theme === 'basic') return [0,1,2,3,4].map(i => `${gender}_${i}`);
+    if (theme === 'suit_2030') return [0,1,2].map(i => `${gender}_2030_suit_${i}`);
+    if (theme === 'suit_5060') return [0,1,2].map(i => `${gender}_5060_suit_${i}`);
+    if (theme === 'casual_2030') return [0,1,2].map(i => `${gender}_2030_casual_${i}`);
+    if (theme === 'casual_5060') return [0,1,2].map(i => `${gender}_5060_casual_${i}`);
+    if (theme === 'summer_2030') return [0,1,2].map(i => `${gender}_summer_${i}`);
+  } else { // hair
+    if (theme === 'interview') {
+      const g = gender === 'male' ? 'male' : 'female';
+      return [0,1,2].map(i => `${g}_interview_hair_${i}`);
+    }
+    if (theme === 'hair_2030') return [0,1,2].map(i => `male_2030_casual_hair_${i}`);
+    if (theme === 'hair_4050') return [0,1,2].map(i => `male_4050_hair_${i}`);
+    if (theme === 'hair_long') return [0,1,2].map(i => `female_long_hair_${i}`);
+    if (theme === 'hair_short') return [0,1,2].map(i => `female_short_hair_${i}`);
+    if (theme === 'hair_4050_long') return [0,1,2].map(i => `female_4050_long_hair_${i}`);
+    if (theme === 'hair_4050_short') return [0,1,2].map(i => `female_4050_short_hair_${i}`);
+  }
+  return [];
+};
+
 const App: React.FC = () => {
   const [originalImage, setOriginalImage] = useState<string | null>(null);
   
@@ -47,6 +82,9 @@ const App: React.FC = () => {
   const [promptOverride, setPromptOverride] = useState('');
 
   const [layerCount, setLayerCount] = useState(0);
+
+  // Sample-preview lightbox: clicking a sample thumbnail opens the full image.
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // New UI States
   const [activeTab, setActiveTab] = useState<'outfit'|'hair'|'manual'>('outfit');
@@ -272,10 +310,11 @@ const App: React.FC = () => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); handleUndo(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); handleDownload(); }
+      if (e.key === 'Escape' && previewImage) { e.preventDefault(); setPreviewImage(null); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleDownload]);
+  }, [handleUndo, handleDownload, previewImage]);
 
   const openModal = (category: 'men_outfit'|'women_outfit'|'men_hair'|'women_hair') => {
     setModalCategory(category);
@@ -548,8 +587,37 @@ const App: React.FC = () => {
                          </div>
                       </div>
 
+                      {/* Inline sample preview for the current outfit (gender, theme) combo */}
+                      {(() => {
+                        const ids = getSampleIds(filterGender, filterTheme, 'outfit');
+                        if (ids.length === 0) return null;
+                        return (
+                          <div className="border-t border-slate-800 pt-3">
+                            <label className="text-xs font-bold text-slate-500 mb-2 block tracking-widest uppercase">📸 샘플 미리보기</label>
+                            <div className={`grid gap-1.5 ${ids.length >= 5 ? 'grid-cols-5' : ids.length === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                              {ids.map(id => (
+                                <button
+                                  key={id}
+                                  onClick={() => setPreviewImage(`/samples/${id}.png`)}
+                                  className="aspect-[3/4] bg-slate-900 rounded overflow-hidden border border-slate-800 hover:border-indigo-500 transition-colors group"
+                                  title={id}
+                                >
+                                  <img
+                                    src={`/samples/${id}.png`}
+                                    alt={id}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-slate-600 mt-1.5">썸네일 클릭 시 확대. 가상인물 기준 샘플로, 실제 결과는 입력 사진의 얼굴이 유지됩니다.</p>
+                          </div>
+                        );
+                      })()}
+
                       <div className="mt-4">
-                        <Button 
+                        <Button
                           onClick={() => {
                             if (filterGender === 'kids') {
                                handleStylePack(filterTheme === 'basic' ? 'boy' : 'girl');
@@ -620,8 +688,37 @@ const App: React.FC = () => {
                          </div>
                       </div>
 
+                      {/* Inline sample preview for the current hair (gender, theme) combo */}
+                      {(() => {
+                        const ids = getSampleIds(filterGender, filterTheme, 'hair');
+                        if (ids.length === 0) return null;
+                        return (
+                          <div className="border-t border-slate-800 pt-3">
+                            <label className="text-xs font-bold text-slate-500 mb-2 block tracking-widest uppercase">📸 샘플 미리보기</label>
+                            <div className={`grid gap-1.5 ${ids.length >= 5 ? 'grid-cols-5' : ids.length === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                              {ids.map(id => (
+                                <button
+                                  key={id}
+                                  onClick={() => setPreviewImage(`/samples/${id}.png`)}
+                                  className="aspect-[3/4] bg-slate-900 rounded overflow-hidden border border-slate-800 hover:border-pink-500 transition-colors group"
+                                  title={id}
+                                >
+                                  <img
+                                    src={`/samples/${id}.png`}
+                                    alt={id}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-slate-600 mt-1.5">썸네일 클릭 시 확대. 가상인물 기준 샘플로, 실제 결과는 입력 사진의 얼굴이 유지됩니다.</p>
+                          </div>
+                        );
+                      })()}
+
                       <div className="mt-4">
-                        <Button 
+                        <Button
                           onClick={() => {
                             let mode: Parameters<typeof handleHairPack>[0];
                             if (filterTheme === 'hair_2030') mode = 'male_2030_casual_hair';
@@ -756,6 +853,28 @@ const App: React.FC = () => {
           <AlertCircle className="w-5 h-5 text-red-400" />
           <div><p className="font-bold text-sm text-red-100">이미지 생성 실패</p><p className="text-sm">{state.error}</p></div>
           <button onClick={() => setState(s => ({...s, error: null}))} className="ml-4 text-red-400 hover:text-white p-1 rounded-md"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {/* Sample-preview lightbox */}
+      {previewImage && (
+        <div
+          onClick={() => setPreviewImage(null)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center cursor-pointer animate-in fade-in duration-200"
+        >
+          <img
+            src={previewImage}
+            alt="sample preview"
+            className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 text-white rounded-full p-2 transition-colors"
+            title="닫기 (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
       )}
     </div>
